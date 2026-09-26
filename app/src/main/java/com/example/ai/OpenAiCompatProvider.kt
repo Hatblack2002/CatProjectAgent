@@ -175,7 +175,11 @@ class OpenAiCompatProvider private constructor(
                             OaiMessage(
                                 role = "tool",
                                 content = response.responseJson,
-                                toolCallId = match?.second ?: "call_missing"
+                                toolCallId = match?.second ?: "call_missing",
+                                // El ToolMessage de Mistral documenta el campo name de la función;
+                                // el resto de proveedores compatibles lo ignoran, así que solo se
+                                // envía donde forma parte del contrato real.
+                                name = response.name.takeIf { id == MISTRAL_ID }
                             )
                         )
                     }
@@ -225,12 +229,15 @@ data class OaiMessage(
     val role: String,
     val content: String? = null,
     @Json(name = "tool_calls") val toolCalls: List<OaiToolCall>? = null,
-    @Json(name = "tool_call_id") val toolCallId: String? = null
+    @Json(name = "tool_call_id") val toolCallId: String? = null,
+    val name: String? = null
 )
 
 @JsonClass(generateAdapter = false)
 data class OaiToolCall(
-    val id: String,
+    // Mistral puede devolver tool_calls sin id: se deja opcional para no
+    // rechazar respuestas reales del servicio.
+    val id: String? = null,
     @Json(name = "type") val type: String = "function",
     val function: OaiToolFn
 )
