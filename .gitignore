@@ -28,3 +28,4 @@ debug.keystore.base64
 
 build/
 .externalNativeBuild/
+keystore.properties

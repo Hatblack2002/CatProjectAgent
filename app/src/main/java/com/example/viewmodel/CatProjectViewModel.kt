@@ -87,9 +87,6 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         startSplashCountdown()
     }
 
-    // ------------------------------------------------------------------
-    // Carga de datos reales
-    // ------------------------------------------------------------------
 
     private fun refreshProjects() {
         viewModelScope.launch {
@@ -126,9 +123,6 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // ------------------------------------------------------------------
-    // Navegación
-    // ------------------------------------------------------------------
 
     fun selectTab(tab: CatNavTab) {
         if (tab == CatNavTab.ARCHIVOS) refreshFiles()
@@ -147,9 +141,6 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { it.copy(selectedAgentId = agentId, currentRoute = CatScreenRoute.AGENT_CHAT) }
     }
 
-    // ------------------------------------------------------------------
-    // Filtros
-    // ------------------------------------------------------------------
 
     fun setProjectFilter(filter: String) {
         _uiState.update { it.copy(projectFilter = filter) }
@@ -167,9 +158,6 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { it.copy(fileSearchQuery = query) }
     }
 
-    // ------------------------------------------------------------------
-    // Chat con agentes reales
-    // ------------------------------------------------------------------
 
     fun onChatInputChange(input: String) {
         _uiState.update { it.copy(currentChatInput = input) }
@@ -286,9 +274,6 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { it.copy(chatMessages = it.chatMessages + message) }
     }
 
-    // ------------------------------------------------------------------
-    // Creación de proyectos (directorio real incluido)
-    // ------------------------------------------------------------------
 
     fun onNewProjectNameChange(name: String) {
         _uiState.update { it.copy(newProjectName = name) }
@@ -342,9 +327,6 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // ------------------------------------------------------------------
-    // Aprobación de acciones: bootstrap del entorno y ejecución real de comandos
-    // ------------------------------------------------------------------
 
     fun triggerSampleApprovalRequest() {
         if (!LinuxBootstrap.isReady(appContext)) {
@@ -466,9 +448,6 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // ------------------------------------------------------------------
-    // Varios
-    // ------------------------------------------------------------------
 
     fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }

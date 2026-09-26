@@ -66,9 +66,6 @@ object PtyBridge {
     private val relaunchReported = ConcurrentHashMap<String, String>()
     private val lastFailure = ConcurrentHashMap<String, String>()
 
-    // ------------------------------------------------------------------
-    // Rutas
-    // ------------------------------------------------------------------
     fun nativeLibDir(context: Context): String =
         context.applicationInfo.nativeLibraryDir ?: ""
 
@@ -90,9 +87,6 @@ object PtyBridge {
         return p.first && LinuxBootstrap.isReady(context)
     }
 
-    // ------------------------------------------------------------------
-    // Sesión PRoot sobre PTY
-    // ------------------------------------------------------------------
     /**
      * argv real ejecutado dentro del PTY (execvp lo hace termux.c):
      *
@@ -275,9 +269,6 @@ object PtyBridge {
         }
     }
 
-    // ------------------------------------------------------------------
-    // E/S
-    // ------------------------------------------------------------------
     fun writeRaw(sessionId: String, bytes: ByteArray) {
         sessions[sessionId]?.session?.write(bytes, 0, bytes.size)
     }
@@ -384,9 +375,6 @@ object PtyBridge {
         return lines.takeLast(maxLines)
     }
 
-    // ------------------------------------------------------------------
-    // Sesiones
-    // ------------------------------------------------------------------
     fun closeSession(sessionId: String) {
         val prev = sessions.remove(sessionId) ?: return
         val caller = Thread.currentThread().stackTrace
@@ -405,9 +393,6 @@ object PtyBridge {
 
     fun deathInfo(sessionId: String): DeathInfo? = lastDeath[sessionId]
 
-    // ------------------------------------------------------------------
-    // Sondas /proc
-    // ------------------------------------------------------------------
     private fun procState(pid: Int): String = try {
         val stat = File("/proc/$pid/stat").readText()
         val fields = stat.substringAfterLast(") ").trim().split(" ")
@@ -430,9 +415,6 @@ object PtyBridge {
         "n/d (proceso terminado)"
     }
 
-    // ------------------------------------------------------------------
-    // Diagnósticos
-    // ------------------------------------------------------------------
     fun diagnostics(context: Context, sessionId: String): List<Pair<String, String>> {
         val appContext = context.applicationContext
         val argv = buildArgv(appContext)
