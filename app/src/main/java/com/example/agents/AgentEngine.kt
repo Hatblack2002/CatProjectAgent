@@ -1,10 +1,10 @@
 package com.example.agents
 
-import com.example.ai.AIProvider
 import com.example.ai.ChatPart
 import com.example.ai.ChatRequest
 import com.example.ai.ChatResponse
 import com.example.ai.Content
+import com.example.ai.ResolvedBrain
 import com.example.model.CatAgent
 import com.example.tools.JsonArgs
 import com.example.tools.ToolGateway
@@ -15,9 +15,12 @@ import com.example.tools.ToolGateway.ToolCall
  * → functionResponse → modelo hasta obtener respuesta final o agotar el
  * máximo de iteraciones. Comparte el estado del proyecto a través de las
  * herramientas reales (workspace, tareas, issues), nunca por inventos.
+ *
+ * Cada agente se atiende con su cerebro resuelto: slot propio si tiene uno,
+ * cerebro principal si no, y Gemini compilado como último recurso.
  */
 class AgentEngine(
-    private val provider: AIProvider,
+    private val brainFor: (CatAgent) -> ResolvedBrain,
     private val gateway: ToolGateway,
     private val listener: Listener
 ) {
@@ -81,11 +84,12 @@ class AgentEngine(
 
         var toolExecutions = 0
         var lastError: String? = null
+        val brain = brainFor(agent)
 
         repeat(MAX_ITERATIONS) { iteration ->
-            when (val response = provider.chat(
+            when (val response = brain.provider.chat(
                 ChatRequest(
-                    model = agent.model.ifBlank { provider.defaultModel },
+                    model = brain.model.ifBlank { brain.provider.defaultModel },
                     systemPrompt = rolePrompt(agent, projectPath),
                     contents = contents.toList(),
                     tools = gateway.declarations(),

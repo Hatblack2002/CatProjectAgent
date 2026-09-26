@@ -4,8 +4,12 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.ai.AIProvider
+import com.example.ai.AiKeyProvider
+import com.example.ai.BrainResolver
+import com.example.ai.BrainSlotConfig
+import com.example.ai.BrainSlots
 import com.example.ai.GeminiProvider
+import com.example.ai.ProviderKeys
 import com.example.ai.ProviderRegistry
 import com.example.agents.AgentEngine
 import com.example.data.CatRepository
@@ -56,6 +60,32 @@ data class SetupState(
     val checking: Boolean = true
 )
 
+/**
+ * Estado editable de un slot de cerebro (principal o de un agente concreto).
+ * Los campos *Draft son el borrador del editor; hasKey refleja la clave
+ * guardada real.
+ */
+data class BrainEditorState(
+    val slot: String,
+    val title: String,
+    val subtitle: String,
+    val providerId: String,
+    val apiKeyDraft: String,
+    val modelDraft: String,
+    val savedModel: String,
+    val hasKey: Boolean,
+    val isPrincipal: Boolean,
+    val editing: Boolean = false,
+    val testing: Boolean = false,
+    val testOk: Boolean? = null,
+    val testDetail: String? = null
+)
+
+data class BrainsState(
+    val slots: List<BrainEditorState> = emptyList(),
+    val summary: String = ""
+)
+
 data class CatUiState(
     val currentRoute: CatScreenRoute = CatScreenRoute.SPLASH,
     val selectedTab: CatNavTab = CatNavTab.INICIO,
@@ -80,6 +110,7 @@ data class CatUiState(
     val pendingApproval: ActionApprovalRequest? = null,
     val toastMessage: String? = null,
     val setup: SetupState = SetupState(),
+    val brains: BrainsState = BrainsState(),
     val filePreviewName: String? = null,
     val filePreviewContent: String? = null,
     val cycleRunning: Boolean = false,
@@ -91,7 +122,7 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
 
     private val appContext = application.applicationContext
     private val repository = CatRepository(appContext)
-    private val provider: AIProvider = ProviderRegistry.gemini(appContext)
+    private val brainResolver = BrainResolver(appContext)
 
     private val _uiState = MutableStateFlow(CatUiState())
     val uiState: StateFlow<CatUiState> = _uiState.asStateFlow()
@@ -151,6 +182,7 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
             refreshAgents()
             refreshChat()
             refreshFiles()
+            refreshBrains()
             refreshSetup()
         }
         startSplashCountdown()
@@ -158,12 +190,12 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun refreshSetup() {
         viewModelScope.launch(Dispatchers.IO) {
-            val providerOk = provider.isConfigured()
+            val providerOk = brainResolver.isAnyConfigured()
             val providerDetail = if (providerOk) {
-                val test = provider.testConnection()
-                test.detail
+                val test = brainResolver.testPrincipal()
+                "${brainResolver.summary()} · prueba real: ${test.detail}"
             } else {
-                "falta GEMINI_API_KEY en el archivo .env del proyecto (recompila después de definirla)"
+                "sin ninguna clave de API: añade la tuya en Ajustes → Cerebros de IA"
             }
             _uiState.update {
                 it.copy(
@@ -183,7 +215,202 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun recheckSetup() = refreshSetup()
+    fun recheckSetup() {
+        refreshBrains()
+        refreshSetup()
+    }
+
+    // ---------- Cerebros de IA: un proveedor y clave por slot ----------
+
+    private fun refreshBrains() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val agents = repository.loadAgents()
+            val slots = mutableListOf<BrainEditorState>()
+
+            val principalCfg = ProviderKeys.load(appContext, BrainSlots.PRINCIPAL)
+            slots.add(
+                BrainEditorState(
+                    slot = BrainSlots.PRINCIPAL,
+                    title = "Cerebro principal",
+                    subtitle = if (principalCfg?.hasKey() == true) {
+                        "atende a todos los agentes · ${brainLabel(principalCfg)}"
+                    } else if (AiKeyProvider.apiKey() != null) {
+                        "sin clave guardada · cae a la GEMINI_API_KEY compilada en el .env"
+                    } else {
+                        "sin clave: introduce aquí tu API para que los agentes razonen de verdad"
+                    },
+                    providerId = principalCfg?.providerId ?: GeminiProvider.ID,
+                    apiKeyDraft = "",
+                    modelDraft = principalCfg?.model?.ifBlank { GeminiProvider.DEFAULT_MODEL } ?: GeminiProvider.DEFAULT_MODEL,
+                    savedModel = principalCfg?.model.orEmpty(),
+                    hasKey = principalCfg?.hasKey() == true,
+                    isPrincipal = true
+                )
+            )
+
+            BrainSlots.AGENT_SLOTS.forEach { slot ->
+                val agent = agents.firstOrNull { it.id == slot }
+                val cfg = ProviderKeys.load(appContext, slot)
+                val descriptor = cfg?.let { ProviderRegistry.descriptor(it.providerId) }
+                val model = cfg?.model?.ifBlank { descriptor?.defaultModel.orEmpty() }.orEmpty()
+                slots.add(
+                    BrainEditorState(
+                        slot = slot,
+                        title = agent?.name ?: fallbackSlotTitle(slot),
+                        subtitle = if (cfg?.hasKey() == true) {
+                            "cerebro propio: ${descriptor?.displayName.orEmpty()} · $model"
+                        } else {
+                            "usa el cerebro principal"
+                        },
+                        providerId = cfg?.providerId ?: GeminiProvider.ID,
+                        apiKeyDraft = "",
+                        modelDraft = model,
+                        savedModel = cfg?.model.orEmpty(),
+                        hasKey = cfg?.hasKey() == true,
+                        isPrincipal = false
+                    )
+                )
+            }
+
+            val summary = brainResolver.summary()
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(brains = BrainsState(slots, summary)) }
+            }
+        }
+    }
+
+    private fun brainLabel(config: BrainSlotConfig): String {
+        val descriptor = ProviderRegistry.descriptor(config.providerId)
+        val model = config.model.ifBlank { descriptor?.defaultModel.orEmpty() }
+        return "${descriptor?.displayName.orEmpty()} · $model"
+    }
+
+    private fun fallbackSlotTitle(slot: String): String = when (slot) {
+        BrainSlots.ARCHITECT -> "Arquitecto"
+        BrainSlots.DESIGNER -> "Diseñador"
+        BrainSlots.CODER -> "Programador"
+        BrainSlots.ANALYST -> "Analista"
+        else -> slot
+    }
+
+    fun editBrain(slot: String) = updateBrainSlot(slot) {
+        it.copy(editing = true, testOk = null, testDetail = null, apiKeyDraft = "")
+    }
+
+    fun cancelBrainEdit(slot: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val agents = repository.loadAgents()
+            val slotState = _uiState.value.brains.slots.firstOrNull { it.slot == slot }
+            val cfg = ProviderKeys.load(appContext, slot)
+            withContext(Dispatchers.Main) {
+                updateBrainSlot(slot) { current ->
+                    rebuildSlotState(current, agents, cfg)
+                }
+                // refreshBrains recalcula subtítulos por si cambió el principal
+                if (slotState?.editing == true) refreshBrains()
+            }
+        }
+    }
+
+    private fun rebuildSlotState(
+        current: BrainEditorState,
+        agents: List<CatAgent>,
+        cfg: BrainSlotConfig?
+    ): BrainEditorState {
+        val descriptor = cfg?.let { ProviderRegistry.descriptor(it.providerId) }
+        val model = cfg?.model?.ifBlank { descriptor?.defaultModel.orEmpty() }.orEmpty()
+        return current.copy(
+            editing = false,
+            testing = false,
+            testOk = null,
+            testDetail = null,
+            providerId = cfg?.providerId ?: GeminiProvider.ID,
+            apiKeyDraft = "",
+            modelDraft = model,
+            savedModel = cfg?.model.orEmpty(),
+            hasKey = cfg?.hasKey() == true,
+            subtitle = if (current.isPrincipal) {
+                if (cfg?.hasKey() == true) "atende a todos los agentes · ${brainLabel(cfg)}"
+                else if (AiKeyProvider.apiKey() != null) "sin clave guardada · cae a la GEMINI_API_KEY compilada en el .env"
+                else "sin clave: introduce aquí tu API para que los agentes razonen de verdad"
+            } else {
+                if (cfg?.hasKey() == true) "cerebro propio: ${descriptor?.displayName.orEmpty()} · $model"
+                else "usa el cerebro principal"
+            }
+        )
+    }
+
+    fun setBrainProvider(slot: String, providerId: String) {
+        updateBrainSlot(slot) {
+            val descriptor = ProviderRegistry.descriptor(providerId)
+            it.copy(providerId = providerId, modelDraft = descriptor?.defaultModel.orEmpty())
+        }
+    }
+
+    fun setBrainKey(slot: String, key: String) {
+        updateBrainSlot(slot) { it.copy(apiKeyDraft = key) }
+    }
+
+    fun setBrainModel(slot: String, model: String) {
+        updateBrainSlot(slot) { it.copy(modelDraft = model) }
+    }
+
+    fun saveBrain(slot: String) {
+        val state = _uiState.value.brains.slots.firstOrNull { it.slot == slot } ?: return
+        val key = state.apiKeyDraft.trim()
+        if (key.isEmpty()) {
+            _uiState.update { it.copy(toastMessage = "Escribe una clave de API real antes de guardar.") }
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val config = BrainSlotConfig(providerId = state.providerId, apiKey = key, model = state.modelDraft.trim())
+            ProviderKeys.save(appContext, slot, config)
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        toastMessage = "Cerebro guardado: ${ProviderRegistry.descriptor(config.providerId)?.displayName.orEmpty()} " +
+                            "· ${config.model.ifBlank { ProviderRegistry.descriptor(config.providerId)?.defaultModel.orEmpty() }}"
+                    )
+                }
+                refreshBrains()
+                refreshAgents()
+                refreshSetup()
+            }
+        }
+    }
+
+    /** Vuelve a dejar un slot de agente en el cerebro principal. */
+    fun resetBrainToPrincipal(slot: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            ProviderKeys.clear(appContext, slot)
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(toastMessage = "Este agente volverá a usar el cerebro principal.") }
+                refreshBrains()
+                refreshAgents()
+                refreshSetup()
+            }
+        }
+    }
+
+    /** Prueba real de conexión con los valores del editor (aún sin guardar). */
+    fun testBrain(slot: String) {
+        val state = _uiState.value.brains.slots.firstOrNull { it.slot == slot } ?: return
+        viewModelScope.launch {
+            updateBrainSlot(slot) { it.copy(testing = true, testOk = null, testDetail = null) }
+            val result = brainResolver.testDraft(state.providerId, state.apiKeyDraft.trim(), state.modelDraft.trim())
+            updateBrainSlot(slot) { it.copy(testing = false, testOk = result.ok, testDetail = result.detail) }
+        }
+    }
+
+    private fun updateBrainSlot(slot: String, transform: (BrainEditorState) -> BrainEditorState) {
+        _uiState.update { state ->
+            state.copy(
+                brains = state.brains.copy(
+                    slots = state.brains.slots.map { if (it.slot == slot) transform(it) else it }
+                )
+            )
+        }
+    }
 
     fun onWorkspaceTreePicked(uri: Uri) {
         val saved = WorkspaceManager.saveTree(appContext, uri)
@@ -223,7 +450,12 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun refreshAgents() {
         viewModelScope.launch {
-            val agents = repository.loadAgents()
+            // La etiqueta provider/model de cada agente refleja su cerebro
+            // resuelto real: slot propio, cerebro principal o Gemini del .env.
+            val agents = repository.loadAgents().map { agent ->
+                val brain = brainResolver.resolve(agent.id, agent.model)
+                agent.copy(model = brain.model, provider = brain.sourceLabel)
+            }
             _uiState.update { it.copy(agents = agents) }
         }
     }
@@ -333,19 +565,25 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
                 .takeLast(12)
                 .map { it.isUser to it.text }
 
-            if (!provider.isConfigured()) {
+            if (!brainResolver.isAnyConfigured()) {
                 postAgentMessage(
                     agent,
                     agentName,
-                    "No hay proveedor de IA configurado todavía. Define GEMINI_API_KEY en el archivo .env del proyecto " +
-                        "(Secrets Gradle Plugin) y recompila; entonces podré razonar y usar herramientas reales."
+                    "No hay ningún cerebro de IA configurado todavía. Ve a Ajustes → Cerebros de IA, elige tu proveedor " +
+                        "(Gemini, OpenAI, Claude, Mistral, Kimi o DeepSeek) e introduce tu propia clave de API. " +
+                        "Con una sola clave basta: ese cerebro atiende a todos los agentes; si quieres, cada rol puede " +
+                        "tener después un cerebro distinto."
                 )
                 restoreAgent(agent)
                 _uiState.update { it.copy(isAgentTyping = false) }
                 return@launch
             }
 
-            val engine = AgentEngine(provider, gateway, agentListener)
+            val engine = AgentEngine(
+                brainFor = { agent -> brainResolver.resolve(agent.id, agent.model) },
+                gateway = gateway,
+                listener = agentListener
+            )
             val turn = engine.converse(agent, activeProjectPath(), prompt, history)
 
             val agentMessage = CatChatMessage(
@@ -377,15 +615,21 @@ class CatProjectViewModel(application: Application) : AndroidViewModel(applicati
             _uiState.update { it.copy(toastMessage = "Abre un proyecto antes de ejecutar el ciclo.") }
             return
         }
-        if (!provider.isConfigured()) {
-            _uiState.update { it.copy(toastMessage = "Configura el proveedor de IA (GEMINI_API_KEY) antes de ejecutar el ciclo.") }
+        if (!brainResolver.isAnyConfigured()) {
+            _uiState.update {
+                it.copy(toastMessage = "Configura un cerebro de IA en Ajustes → Cerebros de IA antes de ejecutar el ciclo.")
+            }
             return
         }
         if (_uiState.value.cycleRunning) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(cycleRunning = true, cycleProgress = "Ciclo iniciado") }
-            val engine = AgentEngine(provider, gateway, agentListener)
+            val engine = AgentEngine(
+                brainFor = { agent -> brainResolver.resolve(agent.id, agent.model) },
+                gateway = gateway,
+                listener = agentListener
+            )
             val architect = repository.findAgentByName("Arquitecto")
             val programmer = repository.findAgentByName("Programador")
             val analyst = repository.findAgentByName("Analista")

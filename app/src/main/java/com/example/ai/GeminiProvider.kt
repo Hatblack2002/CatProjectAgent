@@ -18,8 +18,11 @@ import java.util.concurrent.TimeUnit
  * Adaptador real de la API de Gemini (generateContent) con soporte de
  * function calling: las herramientas se declaran con su esquema JSON y el
  * modelo devuelve llamadas de función estructuradas, no bloques de texto.
+ *
+ * La clave se vincula por slot: cada cerebro puede usar su propia clave;
+ * si no hay clave vinculada, cae a GEMINI_API_KEY compilada en el .env.
  */
-class GeminiProvider(private val context: Context) : AIProvider {
+class GeminiProvider(private val context: Context, private val boundKey: String? = null) : AIProvider {
 
     companion object {
         const val DEFAULT_MODEL = "gemini-2.5-flash"
@@ -44,13 +47,16 @@ class GeminiProvider(private val context: Context) : AIProvider {
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    override fun isConfigured(): Boolean = AiKeyProvider.apiKey() != null
+    private fun apiKey(): String? =
+        boundKey?.takeIf { it.isNotBlank() } ?: AiKeyProvider.apiKey()
+
+    override fun isConfigured(): Boolean = apiKey() != null
 
     override suspend fun testConnection(): ProviderTestResult = withContext(Dispatchers.IO) {
-        val key = AiKeyProvider.apiKey()
+        val key = apiKey()
             ?: return@withContext ProviderTestResult(
                 false,
-                "sin GEMINI_API_KEY: defínela en el archivo .env del proyecto y recompila"
+                "sin clave de API: introdúcela en Ajustes → Cerebros de IA"
             )
         val request = WireRequest(
             contents = listOf(WireContent(role = "user", parts = listOf(WirePart(text = "ping")))),
@@ -75,9 +81,9 @@ class GeminiProvider(private val context: Context) : AIProvider {
     }
 
     override suspend fun chat(request: ChatRequest): ChatResponse = withContext(Dispatchers.IO) {
-        val key = AiKeyProvider.apiKey()
+        val key = apiKey()
             ?: return@withContext ChatResponse.Error(
-                "sin GEMINI_API_KEY: defínela en el archivo .env del proyecto y recompila"
+                "sin clave de API: introdúcela en Ajustes → Cerebros de IA"
             )
 
         val wireTools = if (request.tools.isEmpty()) null else request.tools.map { declaration ->

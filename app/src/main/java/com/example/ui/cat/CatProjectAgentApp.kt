@@ -39,6 +39,7 @@ import com.example.ui.cat.screens.CatMoreScreen
 import com.example.ui.cat.screens.CatNewProjectScreen
 import com.example.ui.cat.screens.CatProjectDetailScreen
 import com.example.ui.cat.screens.CatProjectsScreen
+import com.example.ui.cat.screens.BrainActions
 import com.example.ui.cat.screens.CatSettingsScreen
 import com.example.ui.cat.screens.CatSplashScreen
 import com.example.ui.theme.CatBackground
@@ -208,10 +209,20 @@ fun CatProjectAgentApp(
                             onToggleDarkMode = { viewModel.toggleDarkMode() },
                             isDarkMode = uiState.isDarkMode,
                             setup = uiState.setup,
+                            brains = uiState.brains,
+                            brainActions = BrainActions(
+                                edit = viewModel::editBrain,
+                                cancel = viewModel::cancelBrainEdit,
+                                setProvider = viewModel::setBrainProvider,
+                                setKey = viewModel::setBrainKey,
+                                setModel = viewModel::setBrainModel,
+                                save = viewModel::saveBrain,
+                                test = viewModel::testBrain,
+                                resetToPrincipal = viewModel::resetBrainToPrincipal
+                            ),
                             onPickWorkspace = { workspacePicker.launch(null) },
                             onClearWorkspace = { viewModel.clearWorkspace() },
-                            onPrepareEnvironment = { viewModel.requestEnvironmentSetup() },
-                            onTestProvider = { viewModel.recheckSetup() }
+                            onPrepareEnvironment = { viewModel.requestEnvironmentSetup() }
                         )
                     }
                 }
