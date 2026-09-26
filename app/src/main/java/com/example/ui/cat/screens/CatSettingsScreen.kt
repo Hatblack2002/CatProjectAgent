@@ -15,33 +15,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,17 +44,20 @@ import com.example.ui.theme.CatSurfaceElevated
 import com.example.ui.theme.CatSurfaceVariant
 import com.example.ui.theme.CatTextPrimary
 import com.example.ui.theme.CatTextSecondary
+import com.example.viewmodel.SetupState
 
 @Composable
 fun CatSettingsScreen(
     onBackClick: () -> Unit,
     onToggleDarkMode: () -> Unit,
     isDarkMode: Boolean = true,
+    setup: SetupState,
+    onPickWorkspace: () -> Unit,
+    onClearWorkspace: () -> Unit,
+    onPrepareEnvironment: () -> Unit,
+    onTestProvider: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var notificationsEnabled by remember { mutableStateOf(true) }
-    var wifiOnlyEnabled by remember { mutableStateOf(true) }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -72,7 +66,6 @@ fun CatSettingsScreen(
     ) {
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Top bar (Exact Mockup Match)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
@@ -105,10 +98,250 @@ fun CatSettingsScreen(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Cuenta Section
             item {
                 Text(
-                    text = "Cuenta",
+                    text = "Preferencias",
+                    color = CatTextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    color = CatSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SettingsRow(
+                        icon = Icons.Default.DarkMode,
+                        title = "Tema",
+                        subtitle = if (isDarkMode) "Oscuro" else "Claro",
+                        onClick = onToggleDarkMode
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    text = "Proveedor de IA",
+                    color = CatTextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    color = CatSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Cloud,
+                                contentDescription = null,
+                                tint = CatTextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Google Gemini (gemini-2.5-flash)",
+                                    color = CatTextPrimary,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = when {
+                                        setup.checking -> "comprobando conexión real…"
+                                        setup.providerConfigured -> "configurado · ${setup.providerDetail}"
+                                        else -> "sin GEMINI_API_KEY: define la clave en el .env del proyecto y recompila"
+                                    },
+                                    color = if (setup.providerConfigured) CatTextSecondary else CatAmberPrimary,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            IconButton(onClick = onTestProvider, modifier = Modifier.size(32.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Probar conexión",
+                                    tint = CatTextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Capacidades reales: texto, tool calling, streaming, visión, entrada de archivos.",
+                            color = CatTextSecondary,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "Workspace",
+                    color = CatTextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    color = CatSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                tint = CatTextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Carpeta del dispositivo",
+                                    color = CatTextPrimary,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = if (setup.workspaceConfigured) setup.workspaceLabel
+                                    else "workspace privado de la app (elige una carpeta para ver los archivos en tu explorador)",
+                                    color = CatTextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row {
+                            Surface(
+                                color = CatSurfaceElevated,
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CatAmberPrimary.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onPickWorkspace() }
+                            ) {
+                                Text(
+                                    text = "Elegir carpeta",
+                                    color = CatAmberPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Surface(
+                                color = CatSurfaceVariant,
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onClearWorkspace() }
+                            ) {
+                                Text(
+                                    text = "Usar privado",
+                                    color = CatTextSecondary,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "Entorno Linux",
+                    color = CatTextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    color = CatSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Build,
+                                contentDescription = null,
+                                tint = CatTextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Ubuntu 24.04 + PRoot (motor interno)",
+                                    color = CatTextPrimary,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = if (setup.environmentReady) "listo: los agentes ejecutan comandos reales"
+                                    else "no instalado: ${setup.environmentDetail}",
+                                    color = CatTextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        if (!setup.environmentReady) {
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Surface(
+                                color = CatSurfaceElevated,
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CatAmberPrimary.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onPrepareEnvironment() }
+                            ) {
+                                Text(
+                                    text = "Preparar entorno (~200 MB, con verificación SHA256)",
+                                    color = CatAmberPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "Seguridad",
                     color = CatTextSecondary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
@@ -126,150 +359,31 @@ fun CatSettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(CatSurfaceElevated)
-                                    .border(1.dp, CatAmberPrimary, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "U",
-                                    color = CatTextPrimary,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Column {
-                                Text(
-                                    text = "Usuario",
-                                    color = CatTextPrimary,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "usuario@ejemplo.com",
-                                    color = CatTextSecondary,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Editar cuenta",
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
                             tint = CatTextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column {
+                            Text(
+                                text = "Aprobaciones de acciones sensibles",
+                                color = CatTextPrimary,
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Eliminar archivos, instalar dependencias y ejecutar comandos siempre piden tu confirmación.",
+                                color = CatTextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
-                }
-            }
-
-            // Preferencias Section
-            item {
-                Text(
-                    text = "Preferencias",
-                    color = CatTextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Surface(
-                    color = CatSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                        SettingsRow(
-                            icon = Icons.Default.DarkMode,
-                            title = "Tema",
-                            subtitle = if (isDarkMode) "Oscuro" else "Claro",
-                            onClick = onToggleDarkMode
-                        )
-                        SettingsRow(
-                            icon = Icons.Default.Language,
-                            title = "Idioma",
-                            subtitle = "Español",
-                            onClick = {}
-                        )
-                        SettingsToggleRow(
-                            icon = Icons.Default.Notifications,
-                            title = "Notificaciones",
-                            subtitle = if (notificationsEnabled) "Activadas" else "Desactivadas",
-                            checked = notificationsEnabled,
-                            onCheckedChange = { notificationsEnabled = it }
-                        )
-                        SettingsToggleRow(
-                            icon = Icons.Default.Wifi,
-                            title = "Uso de datos",
-                            subtitle = if (wifiOnlyEnabled) "Solo Wi-Fi" else "Datos móviles y Wi-Fi",
-                            checked = wifiOnlyEnabled,
-                            onCheckedChange = { wifiOnlyEnabled = it }
-                        )
-                    }
-                }
-            }
-
-            // Modelos de IA Section
-            item {
-                Text(
-                    text = "Modelos de IA",
-                    color = CatTextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Surface(
-                    color = CatSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsRow(
-                        icon = Icons.Default.Psychology,
-                        title = "Proveedor principal",
-                        subtitle = "OpenAI (GPT-4o)",
-                        onClick = {}
-                    )
-                }
-            }
-
-            // Seguridad Section
-            item {
-                Text(
-                    text = "Seguridad",
-                    color = CatTextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Surface(
-                    color = CatSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsRow(
-                        icon = Icons.Default.Fingerprint,
-                        title = "Autenticación",
-                        subtitle = "PIN / Biometría",
-                        onClick = {}
-                    )
                 }
             }
 
@@ -325,58 +439,6 @@ private fun SettingsRow(
             contentDescription = null,
             tint = CatTextSecondary,
             modifier = Modifier.size(20.dp)
-        )
-    }
-}
-
-@Composable
-private fun SettingsToggleRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = CatTextSecondary,
-                modifier = Modifier.size(20.dp)
-            )
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column {
-                Text(
-                    text = title,
-                    color = CatTextPrimary,
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = subtitle,
-                    color = CatTextSecondary,
-                    fontSize = 12.sp
-                )
-            }
-        }
-
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = CatAmberPrimary,
-                checkedTrackColor = CatSurfaceElevated,
-                uncheckedTrackColor = CatSurfaceVariant
-            )
         )
     }
 }

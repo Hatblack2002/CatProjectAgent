@@ -19,6 +19,9 @@ object WorkspaceRepository {
 
     fun hostDir(context: Context): File = File(context.filesDir, "workspace")
 
+    /** Raíz del workspace privado expuesta como File para puentes host↔SAF. */
+    fun privateFallbackRoot(context: Context): File = ensureBase(context)
+
     fun projectDir(context: Context, projectId: String): File =
         File(File(hostDir(context), "projects"), projectId)
 

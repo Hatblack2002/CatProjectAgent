@@ -112,6 +112,8 @@ object PtyBridge {
         args += listOf("-b", "/sys")
         if (File("/sdcard").exists()) args += listOf("-b", "/sdcard")
         args += listOf("-b", "${WorkspaceRepository.hostDir(context).absolutePath}:${WorkspaceRepository.GUEST_PATH}")
+        // Mirror de ejecución: copia del proyecto del workspace del usuario
+        args += listOf("-b", "${File(WorkspaceRepository.hostDir(context), "mirror").absolutePath}:/root/mirror")
         // Env del guest (env -i) y shell final
         args += listOf(
             "/usr/bin/env", "-i",

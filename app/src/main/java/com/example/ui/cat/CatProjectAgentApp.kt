@@ -1,6 +1,8 @@
 package com.example.ui.cat
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -9,14 +11,21 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.model.CatNavTab
 import com.example.ui.cat.components.CatActionApprovalDialog
@@ -42,6 +51,10 @@ fun CatProjectAgentApp(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val workspacePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let { viewModel.onWorkspaceTreePicked(it) }
+    }
 
     LaunchedEffect(uiState.toastMessage) {
         uiState.toastMessage?.let { msg ->
@@ -76,7 +89,7 @@ fun CatProjectAgentApp(
         topBar = {
             if (uiState.currentRoute == CatScreenRoute.MAIN_TABS && uiState.selectedTab == CatNavTab.INICIO) {
                 CatTopAppBar(
-                    onOpenNotifications = { viewModel.triggerSampleApprovalRequest() },
+                    onOpenNotifications = { viewModel.requestEnvironmentSetup() },
                     onOpenSettings = { viewModel.navigateTo(CatScreenRoute.SETTINGS) }
                 )
             }
@@ -138,8 +151,8 @@ fun CatProjectAgentApp(
                                     onFilterChange = { viewModel.setFileFilter(it) },
                                     searchQuery = uiState.fileSearchQuery,
                                     onSearchChange = { viewModel.setFileSearchQuery(it) },
-                                    onFileClick = {},
-                                    onAddFileClick = { viewModel.triggerSampleApprovalRequest() }
+                                    onFileClick = { viewModel.openFilePreview(it) },
+                                    onAddFileClick = { viewModel.requestEnvironmentSetup() }
                                 )
                             }
                             CatNavTab.MAS -> {
@@ -168,8 +181,10 @@ fun CatProjectAgentApp(
                             ?: uiState.projects.firstOrNull()
                         CatProjectDetailScreen(
                             project = selectedProj,
+                            openIssues = uiState.openIssues,
                             onBackClick = { viewModel.navigateTo(CatScreenRoute.MAIN_TABS) },
-                            onRequestActionApproval = { viewModel.triggerSampleApprovalRequest() },
+                            onRequestActionApproval = { viewModel.requestEnvironmentSetup() },
+                            onRunCycle = { goal -> viewModel.runAgentCycle(goal) },
                             onOpenChatWithAgent = { agentId -> viewModel.openAgentChat(agentId) }
                         )
                     }
@@ -191,7 +206,12 @@ fun CatProjectAgentApp(
                         CatSettingsScreen(
                             onBackClick = { viewModel.navigateTo(CatScreenRoute.MAIN_TABS) },
                             onToggleDarkMode = { viewModel.toggleDarkMode() },
-                            isDarkMode = uiState.isDarkMode
+                            isDarkMode = uiState.isDarkMode,
+                            setup = uiState.setup,
+                            onPickWorkspace = { workspacePicker.launch(null) },
+                            onClearWorkspace = { viewModel.clearWorkspace() },
+                            onPrepareEnvironment = { viewModel.requestEnvironmentSetup() },
+                            onTestProvider = { viewModel.recheckSetup() }
                         )
                     }
                 }
@@ -207,5 +227,36 @@ fun CatProjectAgentApp(
                 onDismiss = { viewModel.dismissApprovalSheet() }
             )
         }
+
+        if (uiState.filePreviewName != null && uiState.filePreviewContent != null) {
+            CatFilePreviewDialog(
+                name = uiState.filePreviewName!!,
+                content = uiState.filePreviewContent!!,
+                onClose = { viewModel.closeFilePreview() }
+            )
+        }
     }
+}
+
+@Composable
+private fun CatFilePreviewDialog(
+    name: String,
+    content: String,
+    onClose: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(text = name, fontSize = 16.sp) },
+        text = {
+            Text(
+                text = content,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onClose) { Text("Cerrar") }
+        }
+    )
 }

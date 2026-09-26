@@ -33,7 +33,7 @@ interface ProjectDao {
 
 @Dao
 interface TaskDao {
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(tasks: List<TaskEntity>)
 
     @Query("SELECT * FROM tasks")
@@ -56,6 +56,9 @@ interface AgentDao {
 
     @Query("SELECT COUNT(*) FROM agents")
     suspend fun count(): Int
+
+    @Query("DELETE FROM agents WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query("UPDATE agents SET status = :status WHERE id = :id")
     suspend fun setStatus(id: String, status: AgentStatus)
@@ -87,8 +90,16 @@ class Converters {
 }
 
 @Database(
-    entities = [ProjectEntity::class, TaskEntity::class, AgentEntity::class, ChatMessageEntity::class],
-    version = 1,
+    entities = [
+        ProjectEntity::class,
+        TaskEntity::class,
+        AgentEntity::class,
+        ChatMessageEntity::class,
+        IssueEntity::class,
+        ToolLogEntity::class,
+        BuildRecordEntity::class
+    ],
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -97,6 +108,9 @@ abstract class CatDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
     abstract fun agentDao(): AgentDao
     abstract fun chatDao(): ChatDao
+    abstract fun issueDao(): IssueDao
+    abstract fun toolLogDao(): ToolLogDao
+    abstract fun buildRecordDao(): BuildRecordDao
 
     companion object {
         @Volatile
@@ -108,7 +122,37 @@ abstract class CatDatabase : RoomDatabase() {
                     context.applicationContext,
                     CatDatabase::class.java,
                     "cat_project_agent.db"
-                ).build().also { instance = it }
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .build().also { instance = it }
             }
+
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS issues (id TEXT NOT NULL PRIMARY KEY, projectId TEXT NOT NULL, " +
+                        "severity TEXT NOT NULL, category TEXT NOT NULL, requirement TEXT NOT NULL, problem TEXT NOT NULL, " +
+                        "expected TEXT NOT NULL, actual TEXT NOT NULL, evidence TEXT NOT NULL, file TEXT NOT NULL, " +
+                        "line INTEGER NOT NULL, reproduction TEXT NOT NULL, status TEXT NOT NULL, " +
+                        "createdAtMillis INTEGER NOT NULL, updatedAtMillis INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_issues_projectId ON issues(projectId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_issues_status ON issues(status)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS tool_logs (id TEXT NOT NULL PRIMARY KEY, projectId TEXT, " +
+                        "agentName TEXT NOT NULL, tool TEXT NOT NULL, arguments TEXT NOT NULL, outcome TEXT NOT NULL, " +
+                        "detail TEXT NOT NULL, durationMs INTEGER NOT NULL, timestampMillis INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tool_logs_projectId ON tool_logs(projectId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tool_logs_timestampMillis ON tool_logs(timestampMillis)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS build_records (id TEXT NOT NULL PRIMARY KEY, projectId TEXT NOT NULL, " +
+                        "command TEXT NOT NULL, state TEXT NOT NULL, exitCode INTEGER, artifactPath TEXT, " +
+                        "logTail TEXT NOT NULL, startedAtMillis INTEGER NOT NULL, finishedAtMillis INTEGER)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_build_records_projectId ON build_records(projectId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_build_records_startedAtMillis ON build_records(startedAtMillis)")
+            }
+        }
     }
 }

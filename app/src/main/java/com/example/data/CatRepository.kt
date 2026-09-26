@@ -1,7 +1,7 @@
 package com.example.data
 
 import android.content.Context
-import com.example.ai.GeminiClient
+import com.example.ai.GeminiProvider
 import com.example.model.AgentStatus
 import com.example.model.CatAgent
 import com.example.model.CatChatMessage
@@ -21,9 +21,13 @@ class CatRepository(context: Context) {
     private val taskDao = db.taskDao()
     private val agentDao = db.agentDao()
     private val chatDao = db.chatDao()
+    private val issueDao = db.issueDao()
+    private val toolLogDao = db.toolLogDao()
+    private val buildDao = db.buildRecordDao()
 
     suspend fun seedDefaultAgents() {
         if (agentDao.count() == 0) agentDao.upsertAll(DEFAULT_AGENTS.map { it.toEntity() })
+        agentDao.deleteById("agent_custom")
     }
 
     suspend fun loadProjects(): List<CatProject> {
@@ -94,6 +98,14 @@ class CatRepository(context: Context) {
         )
     }
 
+    suspend fun loadIssues(projectId: String) = issueDao.forProject(projectId)
+
+    suspend fun loadToolLogs(projectId: String) = toolLogDao.forProject(projectId)
+
+    suspend fun loadBuilds(projectId: String) = buildDao.forProject(projectId)
+
+    suspend fun allToolLogs() = toolLogDao.recent()
+
     private fun progressOf(tasks: List<com.example.model.ProjectTask>): Int {
         if (tasks.isEmpty()) return 0
         val completed = tasks.count { it.status == TaskStatus.COMPLETADA }
@@ -148,8 +160,8 @@ private val DEFAULT_AGENTS = listOf(
         name = "Arquitecto",
         role = "Define la estructura y plan del proyecto.",
         description = "Especialista en patrones de diseño, escalabilidad y diagramas de arquitectura.",
-        model = GeminiClient.DEFAULT_MODEL,
-        provider = "Google",
+        model = GeminiProvider.DEFAULT_MODEL,
+        provider = "Google Gemini",
         status = AgentStatus.ACTIVO,
         colorHex = 0xFF0EA5E9,
         tasksCompleted = 0
@@ -159,8 +171,8 @@ private val DEFAULT_AGENTS = listOf(
         name = "Diseñador",
         role = "Crea la interfaz y experiencia visual.",
         description = "Diseño de sistemas de color, componentes Compose, tokens de espaciado y animaciones.",
-        model = GeminiClient.DEFAULT_MODEL,
-        provider = "Google",
+        model = GeminiProvider.DEFAULT_MODEL,
+        provider = "Google Gemini",
         status = AgentStatus.ACTIVO,
         colorHex = 0xFFA855F7,
         tasksCompleted = 0
@@ -169,9 +181,9 @@ private val DEFAULT_AGENTS = listOf(
         id = "agent_coder",
         name = "Programador",
         role = "Implementa el código y la lógica.",
-        description = "Escribe código Kotlin limpio, corrutinas, Room DB y arquitectura MVVM sólida.",
-        model = GeminiClient.DEFAULT_MODEL,
-        provider = "Google",
+        description = "Escribe código limpio, instala dependencias reales, compila y corrige errores con evidencia.",
+        model = GeminiProvider.DEFAULT_MODEL,
+        provider = "Google Gemini",
         status = AgentStatus.ACTIVO,
         colorHex = 0xFF10B981,
         tasksCompleted = 0
@@ -180,9 +192,9 @@ private val DEFAULT_AGENTS = listOf(
         id = "agent_analyst",
         name = "Analista",
         role = "Revisa, prueba y valida resultados.",
-        description = "Auditoría de código, detección de cuellos de botella, cobertura de tests y QA.",
-        model = GeminiClient.DEFAULT_MODEL,
-        provider = "Google",
+        description = "Auditoría real del proyecto: ejecuta pruebas, registra issues verificables y exige correcciones.",
+        model = GeminiProvider.DEFAULT_MODEL,
+        provider = "Google Gemini",
         status = AgentStatus.ACTIVO,
         colorHex = 0xFFF59E0B,
         tasksCompleted = 0
@@ -192,21 +204,10 @@ private val DEFAULT_AGENTS = listOf(
         name = "Investigador",
         role = "Busca información y referencias.",
         description = "Investigación de bibliotecas existentes (Reuse before rebuild) y documentación técnica.",
-        model = GeminiClient.DEFAULT_MODEL,
-        provider = "Google",
+        model = GeminiProvider.DEFAULT_MODEL,
+        provider = "Google Gemini",
         status = AgentStatus.ACTIVO,
         colorHex = 0xFF06B6D4,
-        tasksCompleted = 0
-    ),
-    CatAgent(
-        id = "agent_custom",
-        name = "Personalizado",
-        role = "Agrega tus propios agentes.",
-        description = "Crea agentes a medida con system instructions y permisos personalizados.",
-        model = GeminiClient.DEFAULT_MODEL,
-        provider = "Google",
-        status = AgentStatus.ACTIVO,
-        colorHex = 0xFFEC4899,
         tasksCompleted = 0
     )
 )

@@ -71,22 +71,20 @@ import com.example.ui.theme.StatusWaitingOrange
 @Composable
 fun CatProjectDetailScreen(
     project: CatProject?,
+    openIssues: Int,
     onBackClick: () -> Unit,
     onRequestActionApproval: () -> Unit,
+    onRunCycle: (String) -> Unit,
     onOpenChatWithAgent: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val projName = project?.name ?: "App de Inventario"
-    val progress = project?.progressPercent ?: 65
+    val projName = project?.name ?: "Proyecto no encontrado"
+    val progress = project?.progressPercent ?: 0
     var selectedTab by remember { mutableStateOf("Resumen") }
     val tabs = listOf("Resumen", "Tareas", "Archivos", "Config")
 
-    val tasks = project?.tasks?.ifEmpty { null } ?: listOf(
-        ProjectTask("1", "Diseño de interfaz", TaskStatus.COMPLETADA, "Diseñador"),
-        ProjectTask("2", "Base de datos", TaskStatus.EN_PROGRESO, "Programador"),
-        ProjectTask("3", "Integración de API", TaskStatus.PENDIENTE, "Programador"),
-        ProjectTask("4", "Pruebas", TaskStatus.PENDIENTE, "Analista")
-    )
+    val tasks = project?.tasks.orEmpty()
+    var showCycleDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -130,8 +128,8 @@ fun CatProjectDetailScreen(
                     Spacer(modifier = Modifier.width(10.dp))
 
                     CatStatusPill(
-                        statusText = "En progreso",
-                        color = StatusActiveGreen,
+                        statusText = project?.status?.label ?: "Sin estado",
+                        color = if (project != null) StatusActiveGreen else CatTextTertiary,
                         icon = Icons.Default.CheckCircle
                     )
                 }
@@ -238,7 +236,7 @@ fun CatProjectDetailScreen(
                             Spacer(modifier = Modifier.height(4.dp))
 
                             Text(
-                                text = project?.description ?: "Aplicación móvil para gestionar inventario de productos con sincronización en la nube...",
+                                text = project?.description ?: "Este proyecto no tiene descripción todavía.",
                                 color = CatTextSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp,
@@ -249,7 +247,7 @@ fun CatProjectDetailScreen(
                 }
             }
 
-            // General Progress Card (Exact Mockup Match: 65%)
+            // Tarjeta de progreso real (calculado desde las tareas en Room)
             item {
                 Surface(
                     color = CatSurface,
@@ -302,6 +300,25 @@ fun CatProjectDetailScreen(
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
+            }
+
+            if (tasks.isEmpty()) {
+                item {
+                    Surface(
+                        color = CatSurface,
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "No hay tareas todavía. Ejecuta el ciclo multiagente o pídele al Arquitecto un plan desde el chat: las tareas se crean con herramientas reales.",
+                            color = CatTextSecondary,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.padding(14.dp)
+                        )
+                    }
+                }
             }
 
             items(tasks) { task ->
@@ -389,9 +406,25 @@ fun CatProjectDetailScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Demo trigger for Action Approval (Section 12.8 in user specification)
+                if (openIssues > 0) {
+                    Surface(
+                        color = CatSurface,
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, StatusWaitingOrange.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "$openIssues issue(s) abiertos registrados por el Analista. Consulta el chat para la evidencia.",
+                            color = CatTextSecondary,
+                            fontSize = 12.5.sp,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 OutlinedButton(
-                    onClick = onRequestActionApproval,
+                    onClick = { showCycleDialog = true },
                     border = androidx.compose.foundation.BorderStroke(1.dp, CatAmberPrimary.copy(alpha = 0.5f)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -399,8 +432,25 @@ fun CatProjectDetailScreen(
                         .height(44.dp)
                 ) {
                     Text(
-                        text = "Simular Solicitud de Aprobación de Archivos",
+                        text = "Ejecutar ciclo multiagente real",
                         color = CatAmberPrimary,
+                        fontSize = 13.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onRequestActionApproval,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CatAmberPrimary.copy(alpha = 0.3f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Text(
+                        text = "Preparar entorno Linux (Ubuntu)",
+                        color = CatAmberPrimary.copy(alpha = 0.85f),
                         fontSize = 13.sp
                     )
                 }
@@ -408,5 +458,41 @@ fun CatProjectDetailScreen(
                 Spacer(modifier = Modifier.height(20.dp))
             }
         }
+    }
+
+    if (showCycleDialog) {
+        val goalInput = remember { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showCycleDialog = false },
+            title = { Text("Ciclo multiagente real") },
+            text = {
+                Column {
+                    Text(
+                        "Arquitecto → Programador → Analista sobre el proyecto real. Los pasos sensibles pedirán tu aprobación.",
+                        color = CatTextSecondary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = goalInput.value,
+                        onValueChange = { goalInput.value = it },
+                        label = { Text("Objetivo del ciclo") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showCycleDialog = false
+                        onRunCycle(goalInput.value.ifBlank { "implementar el objetivo del proyecto" })
+                    }
+                ) { Text("Ejecutar") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showCycleDialog = false }) { Text("Cancelar") }
+            }
+        )
     }
 }

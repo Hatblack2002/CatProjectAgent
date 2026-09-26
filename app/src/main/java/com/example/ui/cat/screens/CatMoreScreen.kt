@@ -15,14 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,9 +26,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,7 +38,7 @@ import com.example.ui.theme.CatSurface
 import com.example.ui.theme.CatSurfaceElevated
 import com.example.ui.theme.CatTextPrimary
 import com.example.ui.theme.CatTextSecondary
-import com.example.ui.theme.StatusApprovalRed
+import com.example.ui.theme.CatTextTertiary
 
 @Composable
 fun CatMoreScreen(
@@ -59,7 +53,6 @@ fun CatMoreScreen(
     ) {
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Top bar (Exact Mockup Match)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -88,71 +81,16 @@ fun CatMoreScreen(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // User Card (Exact Mockup Match)
             item {
-                Surface(
-                    color = CatSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CatBorder),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenSettings() }
-                        .testTag("more_user_profile_card")
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(CatSurfaceElevated)
-                                    .border(1.5.dp, CatAmberPrimary, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "U",
-                                    color = CatTextPrimary,
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                Text(
+                    text = "Motor y control",
+                    color = CatTextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
 
-                            Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                            Column {
-                                Text(
-                                    text = "Usuario",
-                                    color = CatTextPrimary,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "usuario@ejemplo.com",
-                                    color = CatTextSecondary,
-                                    fontSize = 12.5.sp
-                                )
-                            }
-                        }
-
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = CatTextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
-
-            // Menu Items List (Exact Mockup Match: Historial, Configuración rápida, Ayuda, Sobre la aplicación, Cerrar sesión)
-            item {
                 Surface(
                     color = CatSurface,
                     shape = RoundedCornerShape(14.dp),
@@ -161,32 +99,10 @@ fun CatMoreScreen(
                 ) {
                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
                         MoreMenuItem(
-                            icon = Icons.Default.History,
-                            title = "Historial",
-                            onClick = {}
-                        )
-                        MoreMenuItem(
                             icon = Icons.Default.Settings,
-                            title = "Configuración rápida",
+                            title = "Configuración",
+                            subtitle = "Proveedor de IA, workspace y entorno Linux",
                             onClick = onOpenSettings
-                        )
-                        MoreMenuItem(
-                            icon = Icons.Default.HelpOutline,
-                            title = "Ayuda",
-                            onClick = {}
-                        )
-                        MoreMenuItem(
-                            icon = Icons.Default.Info,
-                            title = "Sobre la aplicación",
-                            onClick = {}
-                        )
-                        MoreMenuItem(
-                            icon = Icons.Default.Logout,
-                            title = "Cerrar sesión",
-                            textColor = StatusApprovalRed,
-                            iconColor = StatusApprovalRed,
-                            showChevron = false,
-                            onClick = {}
                         )
                     }
                 }
@@ -203,16 +119,17 @@ fun CatMoreScreen(
 private fun MoreMenuItem(
     icon: ImageVector,
     title: String,
-    onClick: () -> Unit,
-    textColor: androidx.compose.ui.graphics.Color = CatTextPrimary,
-    iconColor: androidx.compose.ui.graphics.Color = CatTextSecondary,
-    showChevron: Boolean = true
+    subtitle: String = "",
+    textColor: Color = CatTextPrimary,
+    iconColor: Color = CatTextSecondary,
+    showChevron: Boolean = true,
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -226,12 +143,21 @@ private fun MoreMenuItem(
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            Text(
-                text = title,
-                color = textColor,
-                fontSize = 14.5.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Column {
+                Text(
+                    text = title,
+                    color = textColor,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                if (subtitle.isNotEmpty()) {
+                    Text(
+                        text = subtitle,
+                        color = CatTextTertiary,
+                        fontSize = 11.5.sp
+                    )
+                }
+            }
         }
 
         if (showChevron) {
