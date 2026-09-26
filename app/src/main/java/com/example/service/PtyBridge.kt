@@ -2,6 +2,7 @@ package com.example.service
 
 import android.content.Context
 import android.util.Log
+import com.example.data.WorkspaceRepository
 import com.example.model.LineType
 import com.example.model.TerminalLine
 import com.terminalhouse.terminal.TerminalEmulator
@@ -13,38 +14,17 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Puente entre la UI de TerminalHouse y el motor real:
+ * Puente entre la app y el motor de terminal:
  *
- *   TerminalSession (termux-app GPLv3, PTY nativo via JNI libtermux.so)
- *     -> PRoot real (libproot.so de Termux, con loader real libloader.so)
- *       -> rootfs Ubuntu 24.04 real (context.filesDir/ubuntu)
+ *   TerminalSession (termux-app GPLv3, PTY nativo vía JNI)
+ *     -> PRoot (libproot.so)
+ *       -> rootfs Ubuntu 24.04 (filesDir/ubuntu)
  *         -> /bin/bash --login
- *           -> userspace Ubuntu real
  *
- * Task 6 (diagnóstico y corrección, sin cambiar la arquitectura):
- *
- * 1) ANTI-DUPLICACIÓN (causa raíz eliminada): antes, el bloque de cada comando se
- *    derivaba por DIFF de snapshots del transcript del emulador vivo; con rollover
- *    (>500 filas), con redraws in-place (Ctrl+C, TAB, flechas) o ante cualquier
- *    excepción puntual de lectura, el prefijo dejaba de alinear y se re-añadía el
- *    transcript COMPLETO a la UI (los bloques repetidos del registro). Ahora los
- *    bytes crudos del PTY se capturan en un tap (TerminalSession.RawOutputTap,
- *    invocado ANTES de entregarlos al emulador) y cada comando se parsea en un
- *    EMULADOR FRESCO: el bloque es exactamente lo que ese comando produjo. Ni el
- *    emulador vivo ni la UI pueden duplicar bytes.
- *
- * 2) TELEMETRÍA DE MUERTE DE SESIÓN: ya no existe un "Sesión no disponible" sin
- *    diagnóstico. onSessionFinished registra pid, código de salida o señal (decode
- *    SIGKILL/SIGTERM/...), últimas líneas del PTY y lo notifica a la UI; el
- *    relanzamiento automático informa el pid anterior y el nuevo.
- *
- * 3) GRUPOS: buildEnvp exporta TH_CLEAR_SUPPL_GROUPS=1 para que termux.c descarte
- *    los GIDs suplementarios de Android (3003/9997/20388/50388) antes de exec.
- *
- * 4) Concurrencia: runCommand YA NO retiene el monitor global 90 s (antes
- *    writeRaw/closeSession/ensureSession desde el hilo principal podían quedar
- *    bloqueados detrás de un comando largo). El mapa es ConcurrentHashMap y la
- *    exclusión larga es por sesión (shell.commandMutex).
+ * Los bytes crudos de cada comando se capturan con un tap del PTY y se
+ * parsean en un emulador fresco: el bloque devuelto es exactamente lo que
+ * ese comando produjo, sin diffs del transcript (inmune a rollover y
+ * redraws in-place).
  */
 object PtyBridge {
 
@@ -69,7 +49,7 @@ object PtyBridge {
         val session: TerminalSession,
         val client: TerminalSessionClient
     ) {
-        val commandMutex = Any() // serializa comandos DE ESTA sesión
+        val commandMutex = Any()
         val tapLock = Any()
         val tapBytes = ByteArrayOutputStream()
         var tapTotal = 0L
@@ -78,16 +58,16 @@ object PtyBridge {
 
     private val sessions = ConcurrentHashMap<String, Shell>()
 
-    /** Observador de muertes (la UI lo registra para telemetría visible). */
+    /** Observador de finalización de sesiones (pid, salida y últimas líneas). */
     @Volatile
     var deathListener: ((DeathInfo) -> Unit)? = null
 
     private val lastDeath = ConcurrentHashMap<String, DeathInfo>()
-    private val relaunchReported = ConcurrentHashMap<String, String>() // sessionId -> timestampMs reportado
-    private val lastFailure = ConcurrentHashMap<String, String>()      // sessionId -> motivo del fallo de creación
+    private val relaunchReported = ConcurrentHashMap<String, String>()
+    private val lastFailure = ConcurrentHashMap<String, String>()
 
     // ------------------------------------------------------------------
-    // Rutas reales
+    // Rutas
     // ------------------------------------------------------------------
     fun nativeLibDir(context: Context): String =
         context.applicationInfo.nativeLibraryDir ?: ""
@@ -111,7 +91,7 @@ object PtyBridge {
     }
 
     // ------------------------------------------------------------------
-    // Sesión PRoot sobre PTY real
+    // Sesión PRoot sobre PTY
     // ------------------------------------------------------------------
     /**
      * argv real ejecutado dentro del PTY (execvp lo hace termux.c):
@@ -132,11 +112,12 @@ object PtyBridge {
             "-w", "/root",              // cwd inicial del guest
             "-r", rootfs.absolutePath   // raíz del rootfs real
         )
-        // Fase 5: bindings del host al guest
-        args += listOf("-b", "/dev")    // incluye /dev/null, /dev/urandom, /dev/random, /dev/pts
-        args += listOf("-b", "/proc")   // incluye /proc/self/fd
+        // Bindings del host al guest
+        args += listOf("-b", "/dev")
+        args += listOf("-b", "/proc")
         args += listOf("-b", "/sys")
         if (File("/sdcard").exists()) args += listOf("-b", "/sdcard")
+        args += listOf("-b", "${WorkspaceRepository.hostDir(context).absolutePath}:${WorkspaceRepository.GUEST_PATH}")
         // Env del guest (env -i) y shell final
         args += listOf(
             "/usr/bin/env", "-i",
@@ -164,19 +145,17 @@ object PtyBridge {
             "PATH=/system/bin:/system/xbin",
             "HOME=/root",
             "TERM=xterm-256color",
-            // Task 6 / problema 3: el hijo (pre-exec) descarta los GIDs suplementarios
-            // heredados de Android antes de lanzar PRoot; el resultado real (OK o EPERM)
-            // queda registrado en logcat por termux.c.
+            // El hijo descarta los GIDs suplementarios de Android antes de exec (termux.c).
             "TH_CLEAR_SUPPL_GROUPS=1"
         )
         if (loader32File(context).exists()) env.add("PROOT_LOADER32=${loader32File(context).absolutePath}")
-        // Compatibilidad: algunos kernels Android rechazan el filtro seccomp de proot.
-        // Sin seccomp propio, proot sigue siendo plenamente funcional (trazado por ptrace).
+        // Algunos kernels Android rechazan el filtro seccomp de proot; sin seccomp
+        // el trazado por ptrace sigue siendo plenamente funcional.
         env.add("PROOT_NO_SECCOMP=1")
         return env
     }
 
-    /** Decode legible y verídico del estado de salida de JNI.waitFor. */
+    /** Decode legible del estado de salida de JNI.waitFor. */
     private fun decodeExit(exit: Int): String = when {
         exit == 0 -> "código 0 (salida normal del shell)"
         exit > 0 -> "código de salida $exit"
@@ -238,7 +217,7 @@ object PtyBridge {
         lastFailure.remove(sessionId)
         sessions[sessionId]?.let { prev ->
             if (prev.session.isRunning) return prev.session
-            // Sesión previa MUERTA: no se oculta; se relanza y se informa con evidencia.
+            // Sesión previa muerta: se relanza.
             val death = lastDeath[sessionId]
             Log.w(TAG, "Sesión previa $sessionId muerta (pid=${prev.session.getPid()}, exit=${prev.session.getExitStatus()}); relanzando PRoot")
             closeSession(sessionId)
@@ -257,6 +236,9 @@ object PtyBridge {
             return null
         }
 
+        // El workspace debe existir en el host antes de bindearlo en el guest.
+        WorkspaceRepository.ensureBase(appContext)
+
         return try {
             val argv = buildArgv(appContext)
             val envp = buildEnvp(appContext)
@@ -265,17 +247,16 @@ object PtyBridge {
             }
             val client = buildClient(sessionId)
             val session = TerminalSession(
-                argv[0],                    // libproot.so (binario real)
-                cwdGuest,                   // chdir pre-exec (ruta real del host)
+                argv[0],
+                cwdGuest,
                 argv.drop(1).toTypedArray(),
                 envp.toTypedArray(),
                 Integer.valueOf(TRANSCRIPT_ROWS),
                 client
             )
-            // initializeEmulator arranca execvp(argv) en el PTY (JNI termux.c)
             session.initializeEmulator(COLUMNS, ROWS, 8, 16)
             val shell = Shell(sessionId, session, client)
-            // Tap de bytes crudos: se captura SOLO durante un comando (capturing=true).
+            // Tap de bytes crudos: captura solo mientras hay un comando en curso.
             session.setRawOutputTap { buf, len ->
                 synchronized(shell.tapLock) {
                     if (shell.capturing) {
@@ -298,8 +279,6 @@ object PtyBridge {
     // E/S
     // ------------------------------------------------------------------
     fun writeRaw(sessionId: String, bytes: ByteArray) {
-        // Sin monitor del objeto: nunca bloquea el hilo principal aunque haya un
-        // comando largo en curso (Ctrl+C sigue llegando al PTY al instante).
         sessions[sessionId]?.session?.write(bytes, 0, bytes.size)
     }
 
@@ -313,7 +292,7 @@ object PtyBridge {
         val shell = sessions[sessionId] ?: return null
 
         synchronized(shell.commandMutex) {
-            // Captura EXCLUSIVA de los bytes que produzca este comando:
+            // Captura exclusiva de los bytes que produzca este comando.
             synchronized(shell.tapLock) {
                 shell.tapBytes.reset()
                 shell.capturing = true
@@ -321,8 +300,7 @@ object PtyBridge {
             val bytes = (command + "\n").toByteArray(Charsets.UTF_8)
             s.write(bytes, 0, bytes.size)
 
-            // Sondeo por BYTES (no por snapshot): estable cuando dejan de llegar
-            // bytes crudos del PTY (700 ms sin cambios) o timeout.
+            // Estable cuando dejan de llegar bytes del PTY (700 ms) o timeout.
             var last = synchronized(shell.tapLock) { shell.tapTotal }
             var stable = 0L
             val deadline = System.currentTimeMillis() + timeoutMs
@@ -333,18 +311,13 @@ object PtyBridge {
             }
             synchronized(shell.tapLock) { shell.capturing = false }
             val raw = synchronized(shell.tapLock) { shell.tapBytes.toByteArray() }
-            Log.i(TAG, "Comando '$command': bytes crudos del PTY=${raw.size} (capacidad real consumida; una sola entrega al emulador)")
 
             val block = parseBlock(shell, command, raw)
             return relaunchNotice(sessionId, s) + block
         }
     }
 
-    /**
-     * Parsea los bytes crudos del comando en un emulador FRESCO (misma clase que el
-     * emulador vivo). El resultado es exactamente el bloque de ese comando: eco del
-     * comando, salida y prompt siguiente. Sin diffs, sin rollover, sin duplicación.
-     */
+    /** Parsea los bytes crudos del comando en un emulador fresco: el bloque es exactamente su salida. */
     private fun parseBlock(shell: Shell, command: String, raw: ByteArray): List<TerminalLine> {
         if (raw.isEmpty()) return emptyList()
         return try {
@@ -380,10 +353,7 @@ object PtyBridge {
         override fun onColorsChanged() = Unit
     }
 
-    /**
-     * Si la sesión murió y esta es su primera ejecución tras el relanzamiento,
-     * antepone el aviso con la evidencia (pid anterior, causa, pid nuevo).
-     */
+    /** Aviso único con la evidencia del relanzamiento automático. */
     private fun relaunchNotice(sessionId: String, nueva: TerminalSession): List<TerminalLine> {
         val death = lastDeath[sessionId] ?: return emptyList()
         val key = "$sessionId@${death.timestampMs}"
@@ -407,7 +377,7 @@ object PtyBridge {
         return text.split("\n").map { it.trimEnd() }
     }
 
-    /** Últimas líneas reales del transcript del PTY (diagnóstico). */
+    /** Últimas líneas del transcript del PTY (diagnóstico). */
     fun transcriptTail(sessionId: String, maxLines: Int = 20): List<String> {
         val s = sessions[sessionId]?.session ?: return emptyList()
         val lines = snapshot(s)
@@ -430,13 +400,13 @@ object PtyBridge {
 
     fun getPid(sessionId: String): Int = sessions[sessionId]?.session?.getPid() ?: -1
 
-    /** Motivo del último fallo de creación de sesión (para no mostrar un "no disponible" ciego). */
+    /** Motivo del último fallo de creación de sesión. */
     fun lastFailureReason(sessionId: String): String = lastFailure[sessionId] ?: "motivo no registrado (sesión nunca creada)"
 
     fun deathInfo(sessionId: String): DeathInfo? = lastDeath[sessionId]
 
     // ------------------------------------------------------------------
-    // Sondas /proc (evidencia física de procesos, fd y grupos)
+    // Sondas /proc
     // ------------------------------------------------------------------
     private fun procState(pid: Int): String = try {
         val stat = File("/proc/$pid/stat").readText()
@@ -461,7 +431,7 @@ object PtyBridge {
     }
 
     // ------------------------------------------------------------------
-    // Diagnósticos reales (Fase 9 + Task 6)
+    // Diagnósticos
     // ------------------------------------------------------------------
     fun diagnostics(context: Context, sessionId: String): List<Pair<String, String>> {
         val appContext = context.applicationContext

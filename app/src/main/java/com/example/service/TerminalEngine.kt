@@ -7,21 +7,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Motor de comandos de TerminalHouse.
- *
- * FASE 1 (anti-simulación): NO existe dispatcher que fabrique respuestas.
- * Todo comando del usuario se envía tal cual al PTY real:
- *
- *   TerminalEngine -> PtyBridge -> TerminalSession (PTY, termux-app GPLv3)
- *     -> PRoot real -> rootfs Ubuntu -> /bin/bash --login
- *
- * Las salidas que ve el usuario provienen EXCLUSIVAMENTE del shell real.
+ * Motor de comandos: todo se envía tal cual al PTY real (PRoot + rootfs
+ * Ubuntu); no existe ningún dispatcher que fabrique salidas.
  */
 object TerminalEngine {
 
     fun createInitialSessionLines(context: Context): List<TerminalLine> = listOf(
-        TerminalLine("[TerminalHouse] Motor: PTY nativo (termux-app GPLv3) + PRoot + rootfs Ubuntu 24.04", LineType.SYSTEM),
-        TerminalLine("[TerminalHouse] Preparando el entorno real (bootstrap). Este proceso es real: descarga, SHA256, extracción y verificación.", LineType.SYSTEM)
+        TerminalLine("[CatProjectAgent] Motor: PTY nativo (termux-app GPLv3) + PRoot + rootfs Ubuntu 24.04", LineType.SYSTEM),
+        TerminalLine("[CatProjectAgent] Preparando el entorno real: descarga, SHA256, extracción y verificación.", LineType.SYSTEM)
     )
 
     suspend fun executeCommand(
@@ -35,15 +28,12 @@ object TerminalEngine {
             return@withContext CommandResult(emptyList(), currentDir)
         }
 
-        // 'clear' es un comando real del shell; además la UI limpia su lista.
         val shouldClear = trimmed == "clear"
 
         val lines = PtyBridge.runCommand(sessionId, trimmed, context)
             ?: listOf(
-                // Task 6: el fallo JAMÁS queda ciego — incluye el motivo real registrado
-                // por PtyBridge.ensureSession (excepción, PRoot ausente o rootfs no listo).
                 TerminalLine(
-                    "[motor] Sesión no disponible. Causa: ${PtyBridge.lastFailureReason(sessionId)}. Estado real del bootstrap: ${describe(LinuxBootstrap.status.value)}",
+                    "[motor] Sesión no disponible. Causa: ${PtyBridge.lastFailureReason(sessionId)}. Estado del entorno: ${describe(LinuxBootstrap.status.value)}",
                     LineType.ERROR
                 )
             )
@@ -60,7 +50,7 @@ object TerminalEngine {
         is LinuxBootstrap.Status.Checking -> "verificando rootfs"
         is LinuxBootstrap.Status.Ready -> "rootfs listo (${status.info.osPrettyName}, ${status.info.dpkgPackages} paquetes dpkg)"
         is LinuxBootstrap.Status.Failed -> "FALLÓ: ${status.reason}"
-        LinuxBootstrap.Status.NotStarted -> "sin iniciar (pulsa bootstrap o reinicia la app)"
+        LinuxBootstrap.Status.NotStarted -> "sin iniciar"
     }
 }
 

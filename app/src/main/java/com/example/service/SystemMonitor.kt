@@ -13,11 +13,11 @@ import java.io.File
 import java.io.FileReader
 
 /**
- * Estadísticas REALES del dispositivo y del rootfs.
- * FASE 1: ningún valor de identidad Ubuntu inventado.
- * - osVersion: PRETTY_NAME real de <rootfs>/etc/os-release (o "N/D" si no hay rootfs).
- * - packagesCount: recuento real de "Package: " en <rootfs>/var/lib/dpkg/status.
- * - rootfsSizeMb: tamaño real medido del directorio del rootfs.
+ * Estadísticas reales del dispositivo y del rootfs instalado:
+ * - osVersion: PRETTY_NAME de <rootfs>/etc/os-release (o "N/D" sin rootfs).
+ * - packagesCount: recuento de "Package: " en <rootfs>/var/lib/dpkg/status.
+ * - rootfsSizeMb: tamaño medido del directorio del rootfs.
+ * - cpuUsagePercent: -1 cuando /proc/stat no es legible (sin valor inventado).
  */
 object SystemMonitor {
 
@@ -30,7 +30,7 @@ object SystemMonitor {
         val arch = realArchitecture()
         lastArchitecture = arch
 
-        // RAM (real)
+        // RAM
         val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val memInfo = ActivityManager.MemoryInfo()
         actManager?.getMemoryInfo(memInfo)
@@ -39,7 +39,7 @@ object SystemMonitor {
         val usedRamMb = (totalRamMb - availRamMb).coerceAtLeast(0)
         val ramPercent = if (totalRamMb > 0) ((usedRamMb.toDouble() / totalRamMb) * 100).toInt() else 1
 
-        // Storage (real)
+        // Almacenamiento
         val internalStatFs = StatFs(Environment.getDataDirectory().path)
         val totalBytes = internalStatFs.totalBytes
         val freeBytes = internalStatFs.availableBytes
@@ -48,19 +48,19 @@ object SystemMonitor {
         val usedStorageGb = usedBytes.toDouble() / (1024 * 1024 * 1024)
         val storagePercent = if (totalBytes > 0) ((usedBytes.toDouble() / totalBytes) * 100).toInt() else 1
 
-        // CPU (real, /proc/stat)
+        // CPU (/proc/stat)
         val cpuUsage = readRealCpuUsage()
 
-        // Procesos (real, ActivityManager sin violar SELinux en /proc)
+        // Procesos (ActivityManager, sin acceder a /proc)
         val runningProcesses = countSystemProcesses(actManager)
 
-        // Uptime (real)
+        // Uptime
         val uptimeMinutes = SystemClock.elapsedRealtime() / (1000 * 60)
 
-        // Kernel (real, System.getProperty os.version sin violar SELinux)
+        // Kernel
         val kernelVersion = readKernelVersion()
 
-        // Rootfs: SOLO datos reales medidos del rootfs
+        // Rootfs: solo valores medidos
         val info = LinuxBootstrap.metrics(context)
         lastOsPrettyName = info.osPrettyName
         lastRootfsReady = info.dpkgPackages > 0 && File(info.path, "bin/bash").exists()
@@ -88,21 +88,21 @@ object SystemMonitor {
         )
     }
 
-    /** Resumen de identidad REAL para cabeceras de UI (sin valores inventados). */
+    /** Resumen de identidad del entorno para cabeceras. */
     fun identitySummary(context: Context): String {
         return if (LinuxBootstrap.isReady(context)) {
             "${lastOsPrettyName} • ${lastArchitecture}"
         } else {
-            "TerminalHouse • ${lastArchitecture} • rootfs no descargado"
+            "CatProjectAgent • ${lastArchitecture} • rootfs no descargado"
         }
     }
 
-    /** Igual que identitySummary pero sin Context (usa la última medición real). */
+    /** Igual que identitySummary, con la última medición en caché. */
     fun identitySummaryCached(): String {
         return if (lastRootfsReady) {
             "$lastOsPrettyName • $lastArchitecture"
         } else {
-            "TerminalHouse • $lastArchitecture • rootfs no descargado"
+            "CatProjectAgent • $lastArchitecture • rootfs no descargado"
         }
     }
 
@@ -131,7 +131,7 @@ object SystemMonitor {
                                 val total = user + nice + system + idle
                                 val active = user + nice + system
                                 if (total > 0) {
-                                    return ((active.toDouble() / total) * 100).toInt().coerceIn(2, 95)
+                                    return ((active.toDouble() / total) * 100).toInt()
                                 }
                             }
                         }
@@ -143,8 +143,7 @@ object SystemMonitor {
                 canReadProcStat = false
             }
         }
-        val processors = Runtime.getRuntime().availableProcessors()
-        return (10 + (Process.myPid() % 15)).coerceIn(5, 45)
+        return -1
     }
 
     private fun countSystemProcesses(actManager: ActivityManager?): Int {

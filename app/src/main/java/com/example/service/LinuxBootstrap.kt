@@ -23,31 +23,18 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Bootstrap REAL del rootfs Ubuntu 24.04 LTS.
- *
- * - Descarga el rootfs oficial (cloud-images.ubuntu.com, server cloudimg root).
- * - Verifica SHA256 contra el hash embebido y, si difiere, contra el SHA256SUMS
- *   oficial publicado por Ubuntu (puede que upstream haya regenerado la imagen).
- * - Extrae con preservación de: directorios, archivos, symlinks, hardlinks y
- *   permisos (chmod con los bits del tar).
- * - Endurece /etc/resolv.conf y policy-rc.d (configuración chroot estándar).
- * - Verifica físicamente (Fase 6) ANTES de crear el ready marker.
- * - Jamás crea el marker con un rootfs incompleto.
+ * Instalación del rootfs Ubuntu 24.04 LTS en el almacenamiento privado de la
+ * app: descarga oficial (cloud-images.ubuntu.com) reanudable, verificación
+ * SHA256 (embebida y contra el SHA256SUMS publicado por Ubuntu), extracción
+ * con preservación de symlinks/hardlinks/permisos, hardening chroot estándar
+ * y verificación física antes de marcar el entorno como listo.
  */
 object LinuxBootstrap {
 
-    // ---------------------------------------------------------------------
-    // Especificación del rootfs (hashes verificados contra SHA256SUMS oficial
-    // de cloud-images.ubuntu.com el 2026-09-24 y contra los artefactos locales).
-    // ---------------------------------------------------------------------
     object RootfsSpec {
-        // Primario: alias "24.04" (sirve 302 -> noble). Verificado 2026-09-25:
-        // HTTP 200 con accept-ranges: bytes (arm64 217899756 B, armhf 200528936 B).
+        // Alias estable "24.04" (redirige a noble).
         const val BASE_URL = "https://cloud-images.ubuntu.com/releases/24.04/release/"
-        // Secundario: ruta canónica "noble" en el mismo CDN (protege contra rotura
-        // del alias). NOTA REAL 2026-09-25: mirrors.edge.kernel.org, mirrors.tuna
-        // y mirrors.ustc devuelven 404 para ubuntu-cloud-images (dejaron de espejarlo);
-        // no se incluyen espejos muertos.
+        // Ruta canónica "noble" en el mismo CDN, por si el alias deja de resolver.
         const val MIRROR_URL = "https://cloud-images.ubuntu.com/releases/noble/release/"
         const val FILE_ARM64 = "ubuntu-24.04-server-cloudimg-arm64-root.tar.xz"
         const val FILE_ARMHF = "ubuntu-24.04-server-cloudimg-armhf-root.tar.xz"
@@ -106,13 +93,10 @@ object LinuxBootstrap {
     }
 
     /**
-     * Idempotente: descarga+extrae+verifica si hace falta. Devuelve el estado final real.
+     * Idempotente: descarga, extrae y verifica solo si hace falta. Todo el
+     * trabajo bloqueante corre en IO.
      */
     suspend fun ensure(context: Context): Status = mutex.withLock {
-        // FIX NetworkOnMainThreadException: TODO el trabajo bloqueante (red, SHA256,
-        // extracción de ~25k archivos) corre en IO. Antes solo fetchOfficialSha256
-        // estaba en IO: en dispositivo la descarga lanzaba NetworkOnMainThreadException
-        // (su message es null) => "Descarga falló en todos los orígenes: null".
         withContext(Dispatchers.IO) { ensureNow(context) }
     }
 
@@ -129,7 +113,7 @@ object LinuxBootstrap {
             val fileName = RootfsSpec.fileForAbi(abi)
             val expectedSha = RootfsSpec.sha256ForAbi(abi)
 
-            // 1) Descargar (reanudable) o reutilizar el archivo completo ya descargado
+            // Descarga (reanudable) o reutiliza el archivo completo ya descargado
             val archive = archiveFile(appContext)
             val sha: String
             var hashSource = "embebido"
@@ -139,13 +123,12 @@ object LinuxBootstrap {
                 if (local.equals(expectedSha, ignoreCase = true)) {
                     sha = local
                 } else {
-                    // ¿Imagen regenerada por upstream o archivo local corrupto?
                     val official = fetchOfficialSha256(fileName)
                     if (official != null && local.equals(official, ignoreCase = true)) {
                         sha = local
                         hashSource = "SHA256SUMS oficial (imagen regenerada por upstream)"
                     } else {
-                        // Corrupto/truncado: NO se maquilla, se descarta y se re-descarga
+                        // Corrupto o truncado: se descarta y se vuelve a descargar.
                         archive.delete()
                         partFile(appContext).delete()
                         val (s2, src2) = downloadVerified(appContext, fileName, archive, expectedSha)
@@ -165,15 +148,15 @@ object LinuxBootstrap {
                 hashSource = src1
             }
 
-            // 3) Extraer (rootfs parcial previo sin marker se elimina)
+            // Extracción (un rootfs parcial sin marker se elimina)
             val rootfs = rootfsDir(appContext)
             if (rootfs.exists()) rootfs.deleteRecursively()
             rootfs.mkdirs()
-            val counts = extract(appContext, archive)
+            extract(appContext, archive)
             _status.value = Status.Hardening
             harden(appContext)
 
-            // 4) Verificación física (Fase 6)
+            // Verificación física
             _status.value = Status.Checking
             val check = verify(appContext)
             if (!check.first) {
@@ -181,7 +164,7 @@ object LinuxBootstrap {
                 return fail("Verificación del rootfs falló: ${check.second}")
             }
 
-            // 5) Ready marker SOLO tras verificación completa
+            // Ready marker solo tras verificación completa
             val info = metrics(appContext, force = true)
             readyMarker(appContext).writeText(
                 "sha256=$sha\nhashSource=$hashSource\nabi=$abi\nfile=$fileName\n" +
@@ -202,12 +185,9 @@ object LinuxBootstrap {
         return Status.Failed(reason)
     }
 
-    // ------------------------------------------------------------------
-    // Descarga real: reanudación (.part + HTTP Range), errores verídicos por
-    // origen y progreso con límite de frecuencia. Nada inventado.
-    // ------------------------------------------------------------------
+    // Descarga reanudable (.part + HTTP Range) con errores verídicos por origen.
 
-    /** Descarga (reanudable) + verificación SHA256 real. Devuelve (sha, fuente); fuente "" = no verificó. */
+    /** Descarga (reanudable) + verificación SHA256. Devuelve (sha, fuente); fuente "" = no verificó. */
     private suspend fun downloadVerified(
         context: Context, fileName: String, archive: File, expectedSha: String
     ): Pair<String, String> {
@@ -237,7 +217,6 @@ object LinuxBootstrap {
                 }
                 return sha256(dest)
             } catch (e: Exception) {
-                // Error VERÍDICO por origen (clase + mensaje); jamás "null"
                 errors += "${URL(base).host} → ${e.javaClass.simpleName}: ${e.message ?: "(sin mensaje)"}"
             }
         }
@@ -253,7 +232,7 @@ object LinuxBootstrap {
             conn.connectTimeout = 20000
             conn.readTimeout = 90000
             conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent", "TerminalHouse-Bootstrap/1.2 (Android)")
+            conn.setRequestProperty("User-Agent", "CatProjectAgent-Bootstrap/1.2 (Android)")
             if (already > 0L) conn.setRequestProperty("Range", "bytes=$already-")
             try {
                 conn.connect()
@@ -299,7 +278,7 @@ object LinuxBootstrap {
                     }
                 }
                 if (total > 0 && done != total) {
-                    // Conexión corta: el .part SE CONSERVA para reanudar en el próximo intento
+                    // Descarga corta: el .part se conserva para reanudar en el próximo intento.
                     throw IllegalStateException("Descarga incompleta: $done/$total bytes (se reanudará)")
                 }
                 _status.value = Status.Downloading(done, if (total > 0) total else done, shownSource)
@@ -345,9 +324,7 @@ object LinuxBootstrap {
         null
     }
 
-    // ------------------------------------------------------------------
     // Extracción xz/tar con symlinks, hardlinks y permisos
-    // ------------------------------------------------------------------
     private fun extract(context: Context, archive: File): Pair<Int, Int> {
         val rootfs = rootfsDir(context).absolutePath
         var files = 0
@@ -377,7 +354,7 @@ object LinuxBootstrap {
                             Os.symlink(entry.linkName, out.absolutePath)
                             symlinks++
                         } catch (t: Throwable) {
-                            // Algunos symlinks absolutos dentro del tar no resuelven; se registran, no se maquillan
+                            // Symlinks absolutos que no resuelven en el host: se omiten.
                         }
                     }
                     entry.isLink -> {
@@ -395,7 +372,7 @@ object LinuxBootstrap {
                         }
                     }
                     entry.isFIFO || entry.isBlockDevice || entry.isCharacterDevice -> {
-                        // Sin dispositivos propios: /dev se bindea del host (Fase 5)
+                        // Sin nodos de dispositivo: /dev se bindea del host.
                     }
                     else -> {
                         out.parentFile?.mkdirs()
@@ -419,15 +396,15 @@ object LinuxBootstrap {
         return files to symlinks
     }
 
-    /** Configuración mínima para que apt/DNS funcionen dentro de proot. */
+    /** Hardening mínimo para que apt/DNS funcionen dentro de proot. */
     private fun harden(context: Context) {
         val r = rootfsDir(context)
-        // resolv.conf real (el rootfs cloudimg apunta a stub-resolv de systemd, que no corre aquí)
+        // El rootfs cloudimg apunta al stub-resolv de systemd, que no corre aquí.
         val resolv = File(r, "etc/resolv.conf")
         resolv.delete()
         resolv.writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 9.9.9.9\n")
         runCatching { Os.chmod(resolv.absolutePath, 0x1A4) }  // 0644
-        // Evita que los postinst de dpkg intenten arrancar servicios (práctica estándar de chroot)
+        // Evita que los postinst de dpkg intenten arrancar servicios.
         val policy = File(r, "usr/sbin/policy-rc.d")
         policy.parentFile?.mkdirs()
         if (!policy.exists()) {
@@ -443,9 +420,7 @@ object LinuxBootstrap {
         File(r, "var/cache/apt/archives/partial").mkdirs()
     }
 
-    // ------------------------------------------------------------------
-    // Verificación física (Fase 6)
-    // ------------------------------------------------------------------
+    // Verificación física
     private fun verify(context: Context): Pair<Boolean, String> {
         val r = rootfsDir(context)
         fun ok(f: File, needExec: Boolean = false): Boolean =
@@ -466,9 +441,7 @@ object LinuxBootstrap {
         return if (failed.isEmpty()) true to "OK" else false to failed.joinToString("; ") { it.first }
     }
 
-    // ------------------------------------------------------------------
-    // Métricas reales (Fase 9)
-    // ------------------------------------------------------------------
+    // Métricas del rootfs
     fun metrics(context: Context, force: Boolean = false): RootfsInfo {
         val appContext = context.applicationContext
         val cached = cachedInfo
@@ -516,7 +489,7 @@ object LinuxBootstrap {
         File(rootfs, "var/lib/dpkg/status").readLines().count { it.startsWith("Package: ") }
     } catch (t: Throwable) { 0 }
 
-    /** Lista real de paquetes instalados (desde dpkg status), para la pantalla Paquetes. */
+    /** Lista real de paquetes instalados (desde dpkg status). */
     fun loadInstalledPackages(context: Context, limit: Int = 300): List<com.example.model.PackageItem> {
         val out = mutableListOf<com.example.model.PackageItem>()
         try {

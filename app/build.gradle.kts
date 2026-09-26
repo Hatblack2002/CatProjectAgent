@@ -16,13 +16,13 @@ android {
     applicationId = "com.aistudio.catprojectagent.cpa"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "0.3.0"
+    versionCode = 4
+    versionName = "0.4.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
     ndk {
-      // Fase 11: ambas ABIs objetivo, ninguna descartada
+      // ABIs objetivo: arm64-v8a y armeabi-v7a
       abiFilters += listOf("arm64-v8a", "armeabi-v7a")
     }
   }

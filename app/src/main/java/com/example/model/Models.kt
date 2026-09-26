@@ -15,15 +15,6 @@ enum class LineType {
     ASCII_ART
 }
 
-data class TerminalSession(
-    val id: String,
-    val title: String,
-    val lines: List<TerminalLine> = emptyList(),
-    val workingDir: String = "~",
-    val history: List<String> = emptyList(),
-    val historyIndex: Int = -1
-)
-
 data class SystemStats(
     val cpuUsagePercent: Int,
     val ramUsedPercent: Int,
@@ -41,31 +32,6 @@ data class SystemStats(
     val kernelVersion: String = "N/D",
     val uptimeMinutes: Long = 0,
     val packagesCount: Int = 0
-)
-
-data class AiMessage(
-    val id: String,
-    val isUser: Boolean,
-    val text: String,
-    val timestamp: Long = System.currentTimeMillis(),
-    val suggestedCommand: String? = null
-)
-
-data class ProjectItem(
-    val id: String,
-    val name: String,
-    val description: String,
-    val path: String,
-    val language: String,
-    val lastModified: String
-)
-
-data class FileItem(
-    val name: String,
-    val path: String,
-    val isDirectory: Boolean,
-    val size: String,
-    val permissions: String = "rw-r--r--"
 )
 
 data class PackageItem(

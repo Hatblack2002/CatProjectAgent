@@ -57,12 +57,3 @@ fun CatProjectAgentTheme(
         content = content
     )
 }
-
-// Backwards compatibility alias
-@Composable
-fun TerminalHouseTheme(
-    darkTheme: Boolean = true,
-    content: @Composable () -> Unit
-) {
-    CatProjectAgentTheme(darkTheme = darkTheme, content = content)
-}
