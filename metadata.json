@@ -1,0 +1,6 @@
+{
+  "name": "CatProjectAgent",
+  "description": "Plataforma nativa para coordinar múltiples agentes de IA sobre proyectos reales con identidad pixel-art distintiva.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
